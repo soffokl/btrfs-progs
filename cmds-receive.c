@@ -79,6 +79,8 @@ struct btrfs_receive
 
 	int honor_end_cmd;
 
+	char *explicit_parent;
+
 	/*
 	 * Buffer to store capabilities from security.capabilities xattr,
 	 * usually 20 bytes, but make same room for potentially larger
@@ -285,9 +287,14 @@ static int process_snapshot(const char *path, const u8 *uuid, u64 ctransid,
 	memset(&args_v2, 0, sizeof(args_v2));
 	strncpy_null(args_v2.name, path);
 
-	parent_subvol = subvol_uuid_search(&rctx->sus, 0, parent_uuid,
+	if (rctx->explicit_parent) {
+		parent_subvol = subvol_uuid_search(&rctx->sus, 0, NULL,
+			0, rctx->explicit_parent, subvol_search_by_path);
+	} else {
+ 		parent_subvol = subvol_uuid_search(&rctx->sus, 0, parent_uuid,
 					   parent_ctransid, NULL,
 					   subvol_search_by_received_uuid);
+	}
 	if (IS_ERR_OR_NULL(parent_subvol)) {
 		parent_subvol = subvol_uuid_search(&rctx->sus, 0, parent_uuid,
 						   parent_ctransid, NULL,
@@ -1259,6 +1266,7 @@ int cmd_receive(int argc, char **argv)
 	rctx.write_fd = -1;
 	rctx.dest_dir_fd = -1;
 	rctx.dest_dir_chroot = 0;
+	rctx.explicit_parent = NULL;
 	realmnt[0] = 0;
 	fromfile[0] = 0;
 
@@ -1272,7 +1280,7 @@ int cmd_receive(int argc, char **argv)
 			{ NULL, 0, NULL, 0 }
 		};
 
-		c = getopt_long(argc, argv, "Cevf:m:", long_opts, NULL);
+		c = getopt_long(argc, argv, "Cevf:mp:", long_opts, NULL);
 		if (c < 0)
 			break;
 
@@ -1307,6 +1315,9 @@ int cmd_receive(int argc, char **argv)
 			break;
 		case GETOPT_VAL_DUMP:
 			dump = 1;
+			break;
+		case 'p':
+			rctx.explicit_parent = optarg;
 			break;
 		case '?':
 		default:
@@ -1376,6 +1387,8 @@ const char * const cmd_receive_usage[] = {
 	"                 terminate as soon as NERR errors occur while",
 	"                 stream processing commands from the stream.",
 	"                 Default value is 1. A value of 0 means no limit.",
+	"-p <parent>      Disables the automatic searching for parents if incremental",
+	"                 streams are received.",
 	"-m ROOTMOUNT     the root mount point of the destination filesystem.",
 	"                 If /proc is not accessible, use this to tell us where",
 	"                 this file system is mounted.",
